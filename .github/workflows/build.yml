@@ -18,45 +18,43 @@ jobs:
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3
 
-      - name: Cache Compiler & Toolchain
+      - name: Cache Toolchain & Compiler Cache
         id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ccache
             ${{ github.workspace }}/toolchain
-          key: ${{ runner.os }}-proton-clang-v1
+          key: ${{ runner.os }}-proton-clang-v2
           restore-keys: |
             ${{ runner.os }}-proton-clang-
 
       - name: Setup Compiler (Proton Clang)
         run: |
           if [ ! -d "${{ github.workspace }}/toolchain/bin" ]; then
-            echo "Toolchain cache miss. Cloning Proton Clang..."
+            echo "Clang not found in cache. Cloning..."
             mkdir -p ${{ github.workspace }}/toolchain
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git ${{ github.workspace }}/toolchain
           else
-            echo "Toolchain found in GitHub Cache!"
+            echo "Clang restored from cache."
           fi
 
-      - name: Fix MTK drvgen.mk Execution
+      - name: Patch MTK drvgen.mk Dummy Target
         run: |
-          # Replace the failing mv calls in drvgen.mk with a safe touch+mv fallback
           if [ -f "scripts/drvgen/drvgen.mk" ]; then
-            sed -i 's/mv dtboimg.cfg.tmp dtboimg.cfg/touch dtboimg.cfg.tmp \&\& mv dtboimg.cfg.tmp dtboimg.cfg/g' scripts/drvgen/drvgen.mk
-            sed -i 's/mv dtbimg.cfg.tmp dtbimg.cfg/touch dtbimg.cfg.tmp \&\& mv dtbimg.cfg.tmp dtbimg.cfg/g' scripts/drvgen/drvgen.mk
+            sed -i '/rm -f $@.tmp/a \ttouch $@.tmp' scripts/drvgen/drvgen.mk
           fi
 
       - name: Integrate KernelSU & SUSFS Source Patches
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
-          if [ ! -d "${{ github.workspace }}/susfs" ]; then
-            git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git ${{ github.workspace }}/susfs
+          if [ ! -d "susfs" ]; then
+            git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git susfs
           fi
           
-          cp -r ${{ github.workspace }}/susfs/kernel_patches/fs/* fs/
-          cp -r ${{ github.workspace }}/susfs/kernel_patches/include/linux/* include/linux/
+          cp -r susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
+          cp -r susfs/kernel_patches/include/linux/* include/linux/ 2>/dev/null || true
 
       - name: Build Kernel
         run: |
@@ -73,7 +71,6 @@ jobs:
           ccache -M 5G
           ccache -z
 
-          # Build target directory
           mkdir -p out
 
           make ARCH=arm64 O=out blossom_defconfig
@@ -84,10 +81,11 @@ jobs:
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
-          cp out/arch/arm64/boot/Image.gz-dtb AK3/ 2>/dev/null || cp out/arch/arm64/boot/Image AK3/
-          
-          sed -i 's/device.name1=/device.name1=dandelion/g' AK3/anykernel.sh
-          sed -i 's/device.name2=/device.name2=blossom/g' AK3/anykernel.sh
+          if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
+            cp out/arch/arm64/boot/Image.gz-dtb AK3/
+          elif [ -f "out/arch/arm64/boot/Image" ]; then
+            cp out/arch/arm64/boot/Image AK3/
+          fi
           
           cd AK3
           zip -r9 ../blossom-ksu-susfs-kernel.zip * -x .git README.md *placeholder
