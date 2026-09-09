@@ -16,7 +16,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc libncurses5-dev libssl-dev \
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3 device-tree-compiler
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3
 
       - name: Cache Toolchain & Compiler Cache
         id: cache-toolchain
@@ -57,10 +57,10 @@ jobs:
               print(f"Skipped patching drvgen.mk: {e}")
           '
 
-      - name: Integrate KernelSU & SUSFS Patches
+      - name: Integrate KernelSU-Next & SUSFS Patches
         run: |
-          # 1. Setup KernelSU (hooks Kconfig & Makefile)
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          # 1. Setup KernelSU-Next (Legacy 4.19 kernel support)
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 
           # 2. Integrate SUSFS kernel source patches
           if [ ! -d "susfs" ]; then
@@ -89,11 +89,28 @@ jobs:
 
           mkdir -p out
 
+          # Generate config
           make ARCH=arm64 O=out blossom_defconfig
+
+          # Force enable KSU and SUSFS configuration flags
+          cat <<EOF >> out/.config
+          CONFIG_KSU=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          EOF
+
           make ARCH=arm64 O=out olddefconfig
-          
-          # Force compiling DTBs alongside the main kernel binary
-          make -j$(nproc --all) ARCH=arm64 O=out dtbs || true
+
           make -j$(nproc --all) ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j1
 
           ccache -s
@@ -103,45 +120,13 @@ jobs:
           rm -rf AK3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           
-          # 1. Look for precompiled binary DTBs in the build output folder
-          DTB_PATH=$(find out/ -name "*dandelion*.dtb" -o -name "*blossom*.dtb" -o -name "*mt6765*.dtb" -o -name "*.dtb" 2>/dev/null | head -n 1)
-          
-          # 2. If no built DTB exists, fallback to compiling dandelion.dts or mt6765.dts with dtc directly
-          if [ -z "$DTB_PATH" ]; then
-            echo "No precompiled DTB found in out/. Compiling DTS directly with dtc..."
-            
-            DTS_SRC=""
-            if [ -f "arch/arm64/boot/dts/mediatek/dandelion.dts" ]; then
-              DTS_SRC="arch/arm64/boot/dts/mediatek/dandelion.dts"
-            elif [ -f "arch/arm64/boot/dts/mediatek/mt6765.dts" ]; then
-              DTS_SRC="arch/arm64/boot/dts/mediatek/mt6765.dts"
-            fi
-
-            if [ -n "$DTS_SRC" ]; then
-              dtc -I dts -O dtb -i arch/arm64/boot/dts/mediatek/ -o /tmp/target_device.dtb "$DTS_SRC" || true
-              if [ -f "/tmp/target_device.dtb" ]; then
-                DTB_PATH="/tmp/target_device.dtb"
-                echo "Successfully compiled $DTS_SRC -> $DTB_PATH"
-              fi
-            fi
-          fi
-
-          echo "Selected DTB File Path: $DTB_PATH"
-
-          # 3. Concatenate Image.gz and DTB into Image.gz-dtb
-          if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
-            echo "Found native Image.gz-dtb in build output."
-            cp out/arch/arm64/boot/Image.gz-dtb AK3/Image.gz-dtb
-          elif [ -f "out/arch/arm64/boot/Image.gz" ] && [ -n "$DTB_PATH" ]; then
-            echo "Concatenating Image.gz and DTB -> Image.gz-dtb..."
-            cat out/arch/arm64/boot/Image.gz "$DTB_PATH" > AK3/Image.gz-dtb
-          elif [ -f "out/arch/arm64/boot/Image" ] && [ -n "$DTB_PATH" ]; then
-            echo "Gzipping Image and concatenating DTB -> Image.gz-dtb..."
-            gzip -c out/arch/arm64/boot/Image > /tmp/Image.gz
-            cat /tmp/Image.gz "$DTB_PATH" > AK3/Image.gz-dtb
-          else
-            echo "CRITICAL: Missing DTB file. Check source tree for dts files."
+          if [ -f "out/arch/arm64/boot/Image.gz" ]; then
             cp out/arch/arm64/boot/Image.gz AK3/Image.gz
+          elif [ -f "out/arch/arm64/boot/Image" ]; then
+            gzip -c out/arch/arm64/boot/Image > AK3/Image.gz
+          else
+            echo "ERROR: Kernel image output not found!"
+            exit 1
           fi
 
           python3 -c '
@@ -150,14 +135,17 @@ jobs:
 
           properties() {
           kernel.string=NetHunter Kernel with KSU & SUSFS
-          do.devicecheck=0
+          do.devicecheck=1
+          device.name1=blossom
+          device.name2=dandelion
+          device.name3=angelica
+          device.name4=angelican
+          device.name5=cattail
+          device.name6=angelicain
           do.modules=0
           do.systemless=1
           do.cleanup=1
           do.cleanuponabort=0
-          device.name1=blossom
-          device.name2=dandelion
-          supported.versions=
           }
 
           boot_attributes() {
@@ -165,10 +153,10 @@ jobs:
           set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
           }
 
-          BLOCK=boot;
-          IS_SLOT_DEVICE=0;
-          RAMDISK_COMPRESSION=auto;
-          PATCH_VBMETA_FLAG=auto;
+          block=/dev/block/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
 
           . tools/ak3-core.sh;
 
