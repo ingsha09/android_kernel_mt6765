@@ -11,12 +11,15 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
+      - name: Install Build Dependencies & Python Fix
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libncurses5-dev libssl-dev \
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2 python3 python-is-python3
+
+          # Ensure 'python' symlink is available globally for MTK drvgen scripts
+          sudo ln -sf /usr/bin/python3 /usr/bin/python || true
 
       - name: Setup Compiler (Proton Clang)
         run: |
@@ -72,10 +75,13 @@ jobs:
           ccache -M 5G
           ccache -z
 
+          # Pre-create output directory and blank config target to prevent mv error
+          mkdir -p out
+          touch out/dtboimg.cfg
+
           make O=out blossom_defconfig
           make -j$(nproc --all) O=out
 
-          # Display cache efficiency stats after completion
           ccache -s
 
       - name: Package with AnyKernel3
