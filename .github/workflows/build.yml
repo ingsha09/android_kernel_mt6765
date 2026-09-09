@@ -11,27 +11,35 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies & Python Fix
+      - name: Install Build Dependencies & Setup Python 2
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libncurses5-dev libssl-dev \
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2 python3 python-is-python3
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-          # Ensure 'python' symlink is available globally for MTK drvgen scripts
-          sudo ln -sf /usr/bin/python3 /usr/bin/python || true
+          # Install Python 2 manually for MediaTek drvgen/dct tools
+          curl -sS https://bootstrap.pypa.io/pip/2.7/get-pip.py | sudo python2 || true
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+
+      - name: Cache Toolchain & Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ccache
+            ~/clang
+          key: ${{ runner.os }}-kernel-build-toolchain # Fixed key so it persists across all commits
+          restore-keys: |
+            ${{ runner.os }}-kernel-build-toolchain
 
       - name: Setup Compiler (Proton Clang)
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
-
-      - name: Setup Compiler Cache (ccache)
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-kernel-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-kernel-ccache-
+          if [ ! -d "$HOME/clang/bin" ]; then
+            echo "Clang not found in cache. Cloning..."
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
+          else
+            echo "Proton Clang loaded from cache!"
+          fi
 
       - name: Integrate KernelSU & SUSFS Patches
         run: |
@@ -71,13 +79,8 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          # Configure ccache parameters
           ccache -M 5G
           ccache -z
-
-          # Pre-create output directory and blank config target to prevent mv error
-          mkdir -p out
-          touch out/dtboimg.cfg
 
           make O=out blossom_defconfig
           make -j$(nproc --all) O=out
