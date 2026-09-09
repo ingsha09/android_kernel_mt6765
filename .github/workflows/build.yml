@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
       - name: Checkout Source Code
@@ -15,29 +16,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libncurses5-dev libssl-dev \
-            bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
+            bison flex libelf-dev clang lld llvm zip unzip curl git \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3
-
-      - name: Cache Toolchain & Compiler Cache
-        id: cache-toolchain
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/ccache
-            ${{ github.workspace }}/toolchain
-          key: ${{ runner.os }}-proton-clang-v2
-          restore-keys: |
-            ${{ runner.os }}-proton-clang-
 
       - name: Setup Compiler (Proton Clang)
         run: |
-          if [ ! -d "${{ github.workspace }}/toolchain/bin" ]; then
-            echo "Clang not found in cache. Cloning..."
-            mkdir -p ${{ github.workspace }}/toolchain
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git ${{ github.workspace }}/toolchain
-          else
-            echo "Clang restored from cache."
-          fi
+          mkdir -p ${{ github.workspace }}/toolchain
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git ${{ github.workspace }}/toolchain
 
       - name: Safely Patch drvgen.mk Tabs
         run: |
@@ -75,17 +60,14 @@ jobs:
           export PATH="${{ github.workspace }}/toolchain/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
-          export CC="ccache clang"
-          export CXX="ccache clang++"
+          export CC="clang"
+          export CXX="clang++"
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export LLVM=1
           export LLVM_IAS=1
 
           export KBUILD_CFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-incompatible-pointer-types -Wno-initializer-overrides -Wno-tautological-compare -Wno-array-bounds -Wno-enum-conversion"
-
-          ccache -M 5G
-          ccache -z
 
           mkdir -p out
 
@@ -111,9 +93,8 @@ jobs:
 
           make ARCH=arm64 O=out olddefconfig
 
-          make -j$(nproc --all) ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j1
-
-          ccache -s
+          # Reduced thread allocation (-j2) to avoid OOM crashes
+          make -j2 ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j2
 
       - name: Package with AnyKernel3
         run: |
