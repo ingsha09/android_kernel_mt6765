@@ -1,7 +1,7 @@
 name: Manual Kernel Build (MT6765)
 
 on:
-  workflow_dispatch: # Manual execution only
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,16 +11,15 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies & Setup Python 2
+      - name: Install Build Dependencies & Setup Python Symlinks
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libncurses5-dev libssl-dev \
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3
 
-          # Install Python 2 manually for MediaTek drvgen/dct tools
-          curl -sS https://bootstrap.pypa.io/pip/2.7/get-pip.py | sudo python2 || true
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          # Ensure 'python' points to python3 for tools expecting a python executable
+          sudo ln -sf /usr/bin/python3 /usr/bin/python || true
 
       - name: Cache Toolchain & Compiler Cache
         uses: actions/cache@v4
@@ -28,7 +27,7 @@ jobs:
           path: |
             ~/.cache/ccache
             ~/clang
-          key: ${{ runner.os }}-kernel-build-toolchain # Fixed key so it persists across all commits
+          key: ${{ runner.os }}-kernel-build-toolchain
           restore-keys: |
             ${{ runner.os }}-kernel-build-toolchain
 
@@ -47,7 +46,9 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
           # Setup SUSFS repository and apply patches
-          git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git $HOME/susfs
+          if [ ! -d "$HOME/susfs" ]; then
+            git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git $HOME/susfs
+          fi
           
           cp -r $HOME/susfs/kernel_patches/fs/* fs/
           cp -r $HOME/susfs/kernel_patches/include/linux/* include/linux/
@@ -81,6 +82,13 @@ jobs:
 
           ccache -M 5G
           ccache -z
+
+          # Pre-create output directory and dummy config files for MTK drvgen
+          mkdir -p out
+          touch out/dtboimg.cfg
+          touch out/dtboimg.cfg.tmp
+          touch out/dtbimg.cfg
+          touch out/dtbimg.cfg.tmp
 
           make O=out blossom_defconfig
           make -j$(nproc --all) O=out
