@@ -100,16 +100,24 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           
+          # Force creating/copying Image.gz-dtb (MT6765 requirement)
           if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
-            cp out/arch/arm64/boot/Image.gz-dtb AK3/
-          elif [ -f "out/arch/arm64/boot/Image" ]; then
-            cp out/arch/arm64/boot/Image AK3/
+            echo "Found compiled Image.gz-dtb"
+            cp out/arch/arm64/boot/Image.gz-dtb AK3/Image.gz-dtb
+          elif [ -f "out/arch/arm64/boot/Image.gz" ] && [ -f "out/arch/arm64/boot/dts/mediatek/mt6765.dtb" ]; then
+            echo "Concatenating Image.gz and mt6765.dtb..."
+            cat out/arch/arm64/boot/Image.gz out/arch/arm64/boot/dts/mediatek/mt6765.dtb > AK3/Image.gz-dtb
+          elif [ -f "out/arch/arm64/boot/Image.gz" ]; then
+            echo "Falling back to Image.gz..."
+            cp out/arch/arm64/boot/Image.gz AK3/Image.gz
+          else
+            echo "Fallback to raw Image..."
+            cp out/arch/arm64/boot/Image AK3/Image
           fi
           
           python3 -c '
           ak_content = """# SPDX-License-Identifier: GPL-3.0-or-later
           # AnyKernel3 Ramdisk Mod Script
-          ## osm0sis @ xda-developers
 
           properties() {
           kernel.string=NetHunter Kernel with KSU & SUSFS
@@ -119,6 +127,7 @@ jobs:
           do.cleanup=1
           do.cleanuponabort=0
           device.name1=blossom
+          device.name2=dandelion
           supported.versions=
           }
 
@@ -127,8 +136,8 @@ jobs:
           set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
           }
 
-          BLOCK=auto;
-          IS_SLOT_DEVICE=auto;
+          BLOCK=boot;
+          IS_SLOT_DEVICE=0;
           RAMDISK_COMPRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
 
@@ -141,8 +150,9 @@ jobs:
               f.write(ak_content)
           '
 
+          # Cleanly zip from within AK3 folder to prevent double-zip nested structure
           cd AK3
-          zip -r9 ../blossom-ksu-susfs-nethunter.zip * -x .git README.md *placeholder
+          zip -r9 ../blossom-ksu-susfs-nethunter.zip . -x ".git/*" "README.md" "*placeholder"
 
       - name: Upload Flashable Kernel ZIP
         uses: actions/upload-artifact@v4
