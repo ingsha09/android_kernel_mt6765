@@ -18,46 +18,49 @@ jobs:
             bison flex libelf-dev clang lld llvm ccache zip unzip curl git \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python-is-python3
 
-      - name: Cache Toolchain & Compiler Cache
+      - name: Cache Compiler & Toolchain
+        id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ccache
-            ~/clang
-          key: ${{ runner.os }}-kernel-build-toolchain
+            ${{ github.workspace }}/toolchain
+          key: ${{ runner.os }}-proton-clang-v1
           restore-keys: |
-            ${{ runner.os }}-kernel-build-toolchain
+            ${{ runner.os }}-proton-clang-
 
       - name: Setup Compiler (Proton Clang)
         run: |
-          if [ ! -d "$HOME/clang/bin" ]; then
-            echo "Clang not found in cache. Cloning..."
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
+          if [ ! -d "${{ github.workspace }}/toolchain/bin" ]; then
+            echo "Toolchain cache miss. Cloning Proton Clang..."
+            mkdir -p ${{ github.workspace }}/toolchain
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git ${{ github.workspace }}/toolchain
           else
-            echo "Proton Clang loaded from cache!"
+            echo "Toolchain found in GitHub Cache!"
           fi
 
-      - name: Patch MTK drvgen.mk dummy target
+      - name: Fix MTK drvgen.mk DTBO Crash
         run: |
+          # Prevent drvgen.mk from crashing when dtboimg.cfg.tmp doesn't exist
           if [ -f "scripts/drvgen/drvgen.mk" ]; then
-            sed -i 's/mv dtboimg.cfg.tmp dtboimg.cfg/touch dtboimg.cfg.tmp \&\& mv dtboimg.cfg.tmp dtboimg.cfg/g' scripts/drvgen/drvgen.mk
-            sed -i 's/mv dtbimg.cfg.tmp dtbimg.cfg/touch dtbimg.cfg.tmp \&\& mv dtbimg.cfg.tmp dtbimg.cfg/g' scripts/drvgen/drvgen.mk
+            sed -i 's/if ! cmp -s dtboimg.cfg.tmp dtboimg.cfg;/if true;/g' scripts/drvgen/drvgen.mk
+            sed -i 's/if ! cmp -s dtbimg.cfg.tmp dtbimg.cfg;/if true;/g' scripts/drvgen/drvgen.mk
           fi
 
       - name: Integrate KernelSU & SUSFS Source Patches
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
-          if [ ! -d "$HOME/susfs" ]; then
-            git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git $HOME/susfs
+          if [ ! -d "${{ github.workspace }}/susfs" ]; then
+            git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git ${{ github.workspace }}/susfs
           fi
           
-          cp -r $HOME/susfs/kernel_patches/fs/* fs/
-          cp -r $HOME/susfs/kernel_patches/include/linux/* include/linux/
+          cp -r ${{ github.workspace }}/susfs/kernel_patches/fs/* fs/
+          cp -r ${{ github.workspace }}/susfs/kernel_patches/include/linux/* include/linux/
 
       - name: Build Kernel
         run: |
-          export PATH="$HOME/clang/bin:$PATH"
+          export PATH="${{ github.workspace }}/toolchain/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export CC="ccache clang"
@@ -70,6 +73,10 @@ jobs:
           ccache -M 5G
           ccache -z
 
+          mkdir -p out
+          # Pre-create empty config files to prevent build system crashes
+          touch out/dtboimg.cfg out/dtbimg.cfg out/dtboimg.cfg.tmp out/dtbimg.cfg.tmp
+
           make ARCH=arm64 O=out blossom_defconfig
           make -j$(nproc --all) ARCH=arm64 O=out
 
@@ -78,7 +85,7 @@ jobs:
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
-          cp out/arch/arm64/boot/Image.gz-dtb AK3/
+          cp out/arch/arm64/boot/Image.gz-dtb AK3/ 2>/dev/null || cp out/arch/arm64/boot/Image AK3/
           
           sed -i 's/device.name1=/device.name1=dandelion/g' AK3/anykernel.sh
           sed -i 's/device.name2=/device.name2=blossom/g' AK3/anykernel.sh
