@@ -57,34 +57,18 @@ jobs:
               print(f"Skipped patching drvgen.mk: {e}")
           '
 
-      - name: Integrate KernelSU, SUSFS & Update Defconfig
+      - name: Integrate KernelSU & SUSFS Patches
         run: |
-          # 1. Setup KernelSU (this patches drivers/Kconfig & drivers/Makefile automatically)
+          # 1. Setup KernelSU (hooks Kconfig & Makefile)
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-          # 2. Add SUSFS source patches
+          # 2. Integrate SUSFS kernel source patches
           if [ ! -d "susfs" ]; then
             git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git susfs
           fi
           
           cp -r susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
           cp -r susfs/kernel_patches/include/linux/* include/linux/ 2>/dev/null || true
-
-          # 3. DIRECTLY edit blossom_defconfig before generation
-          DEFCONFIG_PATH="arch/arm64/configs/blossom_defconfig"
-          
-          echo 'CONFIG_LOCALVERSION="-IngshaNethunter-ksu-susfs"' >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT_AUTO=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_MOUNT_AUTO=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> $DEFCONFIG_PATH
 
       - name: Build Kernel
         run: |
@@ -128,7 +112,7 @@ jobs:
           ## osm0sis @ xda-developers
 
           properties() {
-          kernel.string=IngshaNethunter Kernel with KSU & SUSFS
+          kernel.string=NetHunter Kernel with KSU & SUSFS
           do.devicecheck=0
           do.modules=0
           do.systemless=1
@@ -158,10 +142,10 @@ jobs:
           '
 
           cd AK3
-          zip -r9 ../IngshaNethunter-blossom-ksu-susfs.zip * -x .git README.md *placeholder
+          zip -r9 ../blossom-ksu-susfs-nethunter.zip * -x .git README.md *placeholder
 
       - name: Upload Flashable Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: IngshaNethunter-blossom-ksu-susfs
-          path: IngshaNethunter-blossom-ksu-susfs.zip
+          name: blossom-ksu-susfs-nethunter
+          path: blossom-ksu-susfs-nethunter.zip
