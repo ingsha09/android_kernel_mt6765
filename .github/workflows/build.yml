@@ -106,38 +106,41 @@ jobs:
             cp out/arch/arm64/boot/Image AK3/
           fi
           
-          # Inject custom device-independent anykernel.sh script
-          cat << 'EOF' > AK3/anykernel.sh
-# SPDX-License-Identifier: GPL-3.0-or-later
-# AnyKernel3 Ramdisk Mod Script
-## osm0sis @ xda-developers
+          # Generate clean anykernel.sh via python to avoid YAML parser squiggles
+          python3 -c '
+          ak_content = """# SPDX-License-Identifier: GPL-3.0-or-later
+          # AnyKernel3 Ramdisk Mod Script
+          ## osm0sis @ xda-developers
 
-properties() { '
-kernel.string=IngshaNethunter Kernel with KSU & SUSFS
-do.devicecheck=0
-do.modules=0
-do.systemless=1
-do.cleanup=1
-do.cleanuponabort=0
-device.name1=blossom
-supported.versions=
-'; }
+          properties() {
+          kernel.string=IngshaNethunter Kernel with KSU & SUSFS
+          do.devicecheck=0
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=blossom
+          supported.versions=
+          }
 
-boot_attributes() {
-set_perm_recursive 0 0 755 644 $RAMDISK/*;
-set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-}
+          boot_attributes() {
+          set_perm_recursive 0 0 755 644 $RAMDISK/*;
+          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+          }
 
-BLOCK=auto;
-IS_SLOT_DEVICE=auto;
-RAMDISK_COMPRESSION=auto;
-PATCH_VBMETA_FLAG=auto;
+          BLOCK=auto;
+          IS_SLOT_DEVICE=auto;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
 
-. tools/ak3-core.sh;
+          . tools/ak3-core.sh;
 
-dump_boot;
-write_boot;
-EOF
+          dump_boot;
+          write_boot;
+          """
+          with open("AK3/anykernel.sh", "w") as f:
+              f.write(ak_content)
+          '
 
           cd AK3
           zip -r9 ../IngshaNethunter-blossom-ksu-susfs.zip * -x .git README.md *placeholder
