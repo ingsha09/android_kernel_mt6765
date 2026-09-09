@@ -88,9 +88,25 @@ jobs:
 
           mkdir -p out
 
+          # 1. Generate base defconfig
           make ARCH=arm64 O=out blossom_defconfig
+
+          # 2. Force-enable KernelSU & SUSFS flags in output config
+          echo "CONFIG_KSU=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT_AUTO=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_MOUNT_AUTO=y" >> out/.config
+
+          # 3. Resolve dependencies and apply new configs
+          make ARCH=arm64 O=out olddefconfig
           
-          # Parallel build first; single-thread fallback with V=1 to print errors if build halts
+          # 4. Compile kernel
           make -j$(nproc --all) ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j1
 
           ccache -s
