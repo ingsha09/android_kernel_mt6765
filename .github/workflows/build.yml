@@ -39,11 +39,20 @@ jobs:
             echo "Clang restored from cache."
           fi
 
-      - name: Patch MTK drvgen.mk Dummy Target
+      - name: Safely Patch drvgen.mk Tabs
         run: |
-          if [ -f "scripts/drvgen/drvgen.mk" ]; then
-            sed -i '/rm -f $@.tmp/a \ttouch $@.tmp' scripts/drvgen/drvgen.mk
-          fi
+          python3 -c '
+          path = "scripts/drvgen/drvgen.mk"
+          try:
+              with open(path, "r") as f:
+                  content = f.read()
+              content = content.replace("rm -f $@.tmp\n", "rm -f $@.tmp\n\ttouch $@.tmp\n")
+              with open(path, "w") as f:
+                  f.write(content)
+              print("Patched drvgen.mk with valid tabs")
+          except Exception as e:
+              print(f"Skipped patching: {e}")
+          '
 
       - name: Integrate KernelSU & SUSFS Source Patches
         run: |
