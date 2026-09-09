@@ -98,17 +98,52 @@ jobs:
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
+          
+          # Copy compiled kernel image
           if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
             cp out/arch/arm64/boot/Image.gz-dtb AK3/
           elif [ -f "out/arch/arm64/boot/Image" ]; then
             cp out/arch/arm64/boot/Image AK3/
           fi
           
+          # Inject custom device-independent anykernel.sh script
+          cat << 'EOF' > AK3/anykernel.sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# AnyKernel3 Ramdisk Mod Script
+## osm0sis @ xda-developers
+
+properties() { '
+kernel.string=IngshaNethunter Kernel with KSU & SUSFS
+do.devicecheck=0
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=blossom
+supported.versions=
+'; }
+
+boot_attributes() {
+set_perm_recursive 0 0 755 644 $RAMDISK/*;
+set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+}
+
+BLOCK=auto;
+IS_SLOT_DEVICE=auto;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
+
+. tools/ak3-core.sh;
+
+dump_boot;
+write_boot;
+EOF
+
           cd AK3
-          zip -r9 ../blossom-ksu-susfs-kernel.zip * -x .git README.md *placeholder
+          zip -r9 ../IngshaNethunter-blossom-ksu-susfs.zip * -x .git README.md *placeholder
 
       - name: Upload Flashable Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: blossom-ksu-susfs-kernel
-          path: blossom-ksu-susfs-kernel.zip
+          name: IngshaNethunter-blossom-ksu-susfs
+          path: IngshaNethunter-blossom-ksu-susfs.zip
