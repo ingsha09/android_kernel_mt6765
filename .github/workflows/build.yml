@@ -39,12 +39,12 @@ jobs:
             echo "Toolchain found in GitHub Cache!"
           fi
 
-      - name: Fix MTK drvgen.mk DTBO Crash
+      - name: Fix MTK drvgen.mk Execution
         run: |
-          # Prevent drvgen.mk from crashing when dtboimg.cfg.tmp doesn't exist
+          # Replace the failing mv calls in drvgen.mk with a safe touch+mv fallback
           if [ -f "scripts/drvgen/drvgen.mk" ]; then
-            sed -i 's/if ! cmp -s dtboimg.cfg.tmp dtboimg.cfg;/if true;/g' scripts/drvgen/drvgen.mk
-            sed -i 's/if ! cmp -s dtbimg.cfg.tmp dtbimg.cfg;/if true;/g' scripts/drvgen/drvgen.mk
+            sed -i 's/mv dtboimg.cfg.tmp dtboimg.cfg/touch dtboimg.cfg.tmp \&\& mv dtboimg.cfg.tmp dtboimg.cfg/g' scripts/drvgen/drvgen.mk
+            sed -i 's/mv dtbimg.cfg.tmp dtbimg.cfg/touch dtbimg.cfg.tmp \&\& mv dtbimg.cfg.tmp dtbimg.cfg/g' scripts/drvgen/drvgen.mk
           fi
 
       - name: Integrate KernelSU & SUSFS Source Patches
@@ -73,9 +73,8 @@ jobs:
           ccache -M 5G
           ccache -z
 
+          # Build target directory
           mkdir -p out
-          # Pre-create empty config files to prevent build system crashes
-          touch out/dtboimg.cfg out/dtbimg.cfg out/dtboimg.cfg.tmp out/dtbimg.cfg.tmp
 
           make ARCH=arm64 O=out blossom_defconfig
           make -j$(nproc --all) ARCH=arm64 O=out
