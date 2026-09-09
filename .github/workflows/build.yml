@@ -96,13 +96,14 @@ jobs:
 
           ccache -s
 
-            - name: Package with AnyKernel3
+      - name: Package with AnyKernel3
         run: |
           rm -rf AK3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           
-          # Find DTB dynamically and force creation of Image.gz-dtb
-          DTB_PATH=$(find out/arch/arm64/boot -name "*.dtb" | head -n 1)
+          # Find DTB dynamically inside out/ and force creation of Image.gz-dtb
+          DTB_PATH=$(find out/ -name "*.dtb" | head -n 1)
+          echo "Found DTB at: $DTB_PATH"
           
           if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
             echo "Found native Image.gz-dtb"
@@ -115,8 +116,8 @@ jobs:
             gzip -c out/arch/arm64/boot/Image > /tmp/Image.gz
             cat /tmp/Image.gz "$DTB_PATH" > AK3/Image.gz-dtb
           else
-            echo "Warning: DTB not found, copying Image.gz as fallback"
-            cp out/arch/arm64/boot/Image.gz AK3/Image.gz
+            echo "Warning: DTB not found, copying raw kernel image..."
+            [ -f "out/arch/arm64/boot/Image.gz" ] && cp out/arch/arm64/boot/Image.gz AK3/Image.gz || cp out/arch/arm64/boot/Image AK3/Image
           fi
           
           python3 -c '
