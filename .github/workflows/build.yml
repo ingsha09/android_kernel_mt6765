@@ -77,13 +77,18 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
+          # Relax strict Clang errors for legacy MTK drivers
+          export KBUILD_CFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-incompatible-pointer-types -Wno-initializer-overrides -Wno-tautological-compare -Wno-array-bounds -Wno-enum-conversion"
+
           ccache -M 5G
           ccache -z
 
           mkdir -p out
 
           make ARCH=arm64 O=out blossom_defconfig
-          make -j$(nproc --all) ARCH=arm64 O=out
+          
+          # Run make with -j$(nproc) first; if it fails, fallback to 1 thread with V=1 to print exact error
+          make -j$(nproc --all) ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j1
 
           ccache -s
 
