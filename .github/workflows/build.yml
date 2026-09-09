@@ -37,7 +37,14 @@ jobs:
             echo "Proton Clang loaded from cache!"
           fi
 
-      - name: Integrate KernelSU & SUSFS Patches
+      - name: Patch MTK drvgen.mk dummy target
+        run: |
+          if [ -f "scripts/drvgen/drvgen.mk" ]; then
+            sed -i 's/mv dtboimg.cfg.tmp dtboimg.cfg/touch dtboimg.cfg.tmp \&\& mv dtboimg.cfg.tmp dtboimg.cfg/g' scripts/drvgen/drvgen.mk
+            sed -i 's/mv dtbimg.cfg.tmp dtbimg.cfg/touch dtbimg.cfg.tmp \&\& mv dtbimg.cfg.tmp dtbimg.cfg/g' scripts/drvgen/drvgen.mk
+          fi
+
+      - name: Integrate KernelSU & SUSFS Source Patches
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
@@ -47,28 +54,6 @@ jobs:
           
           cp -r $HOME/susfs/kernel_patches/fs/* fs/
           cp -r $HOME/susfs/kernel_patches/include/linux/* include/linux/
-          
-          {
-            echo "CONFIG_KSU=y"
-            echo "CONFIG_KSU_SUSFS=y"
-            echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
-            echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y"
-            echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU=y"
-          } >> arch/arm64/configs/blossom_defconfig
-
-      - name: Patch MTK drvgen.mk dummy target
-        run: |
-          # Patch drvgen.mk to ensure missing .tmp files do not halt the build
-          if [ -f "scripts/drvgen/drvgen.mk" ]; then
-            sed -i 's/mv dtboimg.cfg.tmp dtboimg.cfg/touch dtboimg.cfg.tmp \&\& mv dtboimg.cfg.tmp dtboimg.cfg/g' scripts/drvgen/drvgen.mk
-            sed -i 's/mv dtbimg.cfg.tmp dtbimg.cfg/touch dtbimg.cfg.tmp \&\& mv dtbimg.cfg.tmp dtbimg.cfg/g' scripts/drvgen/drvgen.mk
-          fi
 
       - name: Build Kernel
         run: |
@@ -85,8 +70,8 @@ jobs:
           ccache -M 5G
           ccache -z
 
-          make O=out blossom_defconfig
-          make -j$(nproc --all) O=out
+          make ARCH=arm64 O=out blossom_defconfig
+          make -j$(nproc --all) ARCH=arm64 O=out
 
           ccache -s
 
