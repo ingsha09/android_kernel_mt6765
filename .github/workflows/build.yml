@@ -57,16 +57,34 @@ jobs:
               print(f"Skipped patching drvgen.mk: {e}")
           '
 
-      - name: Integrate KernelSU & SUSFS Source Patches
+      - name: Integrate KernelSU, SUSFS & Update Defconfig
         run: |
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          
+          # 1. Setup KernelSU (this patches drivers/Kconfig & drivers/Makefile automatically)
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+
+          # 2. Add SUSFS source patches
           if [ ! -d "susfs" ]; then
             git clone --depth=1 https://gitlab.com/simonpunk/SUSFS4KSU.git susfs
           fi
           
           cp -r susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
           cp -r susfs/kernel_patches/include/linux/* include/linux/ 2>/dev/null || true
+
+          # 3. DIRECTLY edit blossom_defconfig before generation
+          DEFCONFIG_PATH="arch/arm64/configs/blossom_defconfig"
+          
+          echo 'CONFIG_LOCALVERSION="-IngshaNethunter-ksu-susfs"' >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT_AUTO=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_MOUNT_AUTO=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> $DEFCONFIG_PATH
 
       - name: Build Kernel
         run: |
@@ -80,7 +98,6 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          # Relax strict Clang warnings for legacy MediaTek modules
           export KBUILD_CFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-incompatible-pointer-types -Wno-initializer-overrides -Wno-tautological-compare -Wno-array-bounds -Wno-enum-conversion"
 
           ccache -M 5G
@@ -88,25 +105,9 @@ jobs:
 
           mkdir -p out
 
-          # 1. Generate base defconfig
           make ARCH=arm64 O=out blossom_defconfig
-
-          # 2. Force-enable KernelSU & SUSFS flags in output config
-          echo "CONFIG_KSU=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT_AUTO=y" >> out/.config
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_MOUNT_AUTO=y" >> out/.config
-
-          # 3. Resolve dependencies and apply new configs
           make ARCH=arm64 O=out olddefconfig
           
-          # 4. Compile kernel
           make -j$(nproc --all) ARCH=arm64 O=out || make ARCH=arm64 O=out V=1 -j1
 
           ccache -s
@@ -115,14 +116,12 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           
-          # Copy compiled kernel image
           if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
             cp out/arch/arm64/boot/Image.gz-dtb AK3/
           elif [ -f "out/arch/arm64/boot/Image" ]; then
             cp out/arch/arm64/boot/Image AK3/
           fi
           
-          # Generate clean anykernel.sh via python to avoid YAML parser squiggles
           python3 -c '
           ak_content = """# SPDX-License-Identifier: GPL-3.0-or-later
           # AnyKernel3 Ramdisk Mod Script
